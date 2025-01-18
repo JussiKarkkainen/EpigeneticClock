@@ -1,12 +1,13 @@
 import pandas as pd
 from sklearn.preprocessing import OneHotEncoder
+from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
 import numpy as np
 import os
 import re
 from collections import defaultdict
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, TensorDataset
 import torch.nn as nn
 
 
@@ -153,16 +154,15 @@ class EpigeneticClockNN(nn.Module):
   def __init__(self):
     super(EpigeneticClockNN, self).__init__()
     self.network = nn.Sequential(
-        nn.Linear(360, 256),
+        nn.Linear(360, 512),
         nn.ReLU(),
-        nn.Dropout(0.3),
-        nn.Linear(256, 128),
+        nn.Dropout(0.1),
+        nn.Linear(512, 512),
         nn.ReLU(),
-        nn.Dropout(0.3),
-        nn.Linear(128, 64),
+        nn.Dropout(0.1),
+        nn.Linear(512, 128),
         nn.ReLU(),
-        nn.Dropout(0.2),
-        nn.Linear(64, 1)
+        nn.Linear(128, 1)
     )
 
   def forward(self, x):
@@ -173,54 +173,99 @@ if __name__ == "__main__":
     preprocess_data("data/", "CpGs.csv", "data/preprocessed_dataset.csv")
   dataset = pd.read_csv("data/preprocessed_dataset.csv")
   dataset = dataset.dropna()
-  torch_dataset = MethylationDataset(dataset)
-  dataloader = DataLoader(torch_dataset, batch_size=16, shuffle=True)
 
+  X = dataset.drop(columns=['Age'])
+  y = dataset['Age']
+
+  X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+  X_train_tensor = torch.tensor(X_train.values, dtype=torch.float32)
+  y_train_tensor = torch.tensor(y_train.values, dtype=torch.float32)
+  X_test_tensor = torch.tensor(X_test.values, dtype=torch.float32)
+  y_test_tensor = torch.tensor(y_test.values, dtype=torch.float32)
+
+  train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
+  test_dataset = TensorDataset(X_test_tensor, y_test_tensor)
+
+  train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
+  test_loader = DataLoader(test_dataset, batch_size=16, shuffle=False)
+
+  # torch_dataset = MethylationDataset(dataset)
+  # dataloader = DataLoader(torch_dataset, batch_size=16, shuffle=True)
 
   model = EpigeneticClockNN()
-  optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
-  num_epochs = 100
+  optimizer = torch.optim.Adam(model.parameters(), lr=3e-4)
+  num_epochs = 1000
   loss_fn = nn.MSELoss()
 
-  epoch_losses = []
-  epoch_mae = []
+  train_losses = []
+  train_mae = []
+  test_losses = []
+  test_mae = []
 
   plt.ion()
-  fig, (ax_loss, ax_mae) = plt.subplots(1, 2, figsize=(12, 5))
-  ax_loss.set_title("Training Loss")
-  ax_loss.set_xlabel("Epoch")
-  ax_loss.set_ylabel("Loss")
-  ax_mae.set_title("Mean Absolute Error")
-  ax_mae.set_xlabel("Epoch")
-  ax_mae.set_ylabel("MAE")
+  fig, (ax_train, ax_test) = plt.subplots(1, 2, figsize=(14, 6))
+  ax_train.set_title("Training Metrics")
+  ax_train.set_xlabel("Epoch")
+  ax_train.set_ylabel("Value")
+  ax_test.set_title("Testing Metrics")
+  ax_test.set_xlabel("Epoch")
+  ax_test.set_ylabel("Value")
 
   for epoch in range(num_epochs):
-    epoch_loss = 0
-    mae_sum = 0
+    train_epoch_loss = 0
+    train_mae_sum = 0
     model.train()
-    for x, y in dataloader:
+    for x, y in train_loader:
       optimizer.zero_grad()
       pred = model(x)
       loss = loss_fn(pred, y)
       loss.backward()
       optimizer.step()
       
-      epoch_loss += loss.item()
-      mae_sum += torch.sum(torch.abs(pred - y)).item()
+      train_epoch_loss += loss.item()
+      train_mae_sum += torch.sum(torch.abs(pred - y)).item()
 
-    epoch_loss /= len(dataloader.dataset)
-    mae = mae_sum / len(dataloader.dataset)
+    train_epoch_loss /= len(train_loader.dataset)
+    train_epoch_mae = train_mae_sum / len(train_loader.dataset)
+    train_losses.append(train_epoch_loss)
+    train_mae.append(train_epoch_mae)
 
-    epoch_losses.append(epoch_loss)
-    epoch_mae.append(mae)
-    ax_loss.plot(epoch_losses, label="Loss", color="blue")
-    ax_mae.plot(epoch_mae, label="MAE", color="orange")
+    model.eval()
+    test_epoch_loss = 0
+    test_mae_sum = 0
+    with torch.no_grad():
+      for x, y in test_loader:
+        pred = model(x)
+        loss = loss_fn(pred, y)
+
+        test_epoch_loss += loss.item()
+        test_mae_sum += torch.sum(torch.abs(pred - y)).item()
+
+    test_epoch_loss /= len(test_loader.dataset)
+    test_epoch_mae = test_mae_sum / len(test_loader.dataset)
+    test_losses.append(test_epoch_loss)
+    test_mae.append(test_epoch_mae)
+
+    ax_train.clear()
+    ax_test.clear()
+
+    ax_train.plot(train_losses, label="Train Loss", color="blue")
+    ax_train.plot(train_mae, label="Train MAE", color="orange")
+    ax_train.legend()
+
+    ax_test.plot(test_losses, label="Test Loss", color="green")
+    ax_test.plot(test_mae, label="Test MAE", color="red")
+    ax_test.legend()
+
     fig.canvas.draw()
     plt.pause(0.01)
 
-    print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {epoch_loss:.4f}, MAE: {mae:.4f}")
+    print(
+        f"Epoch {epoch + 1}/{num_epochs} - "
+        f"Train Loss: {train_epoch_loss:.4f}, Train MAE: {train_epoch_mae:.4f} | "
+        f"Test Loss: {test_epoch_loss:.4f}, Test MAE: {test_epoch_mae:.4f}"
+    )
 
   plt.ioff()
   plt.show()
-
-
