@@ -193,7 +193,7 @@ if __name__ == "__main__":
 
   model = EpigeneticClockNN()
   optimizer = torch.optim.Adam(model.parameters(), lr=3e-4)
-  num_epochs = 100
+  num_epochs = 500
   loss_fn = nn.MSELoss()
 
   train_losses = []
