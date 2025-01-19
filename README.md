@@ -14,6 +14,6 @@ The following datasets were combined to create the data with an 80/20 train/test
 
 ![](docs/loss_graph.png)
 
-
-## TODO:
-- Testing and validation
+## TODO
+- Increase data size
+- Add other biomarkers other than methylation
