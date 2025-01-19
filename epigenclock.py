@@ -154,15 +154,13 @@ class EpigeneticClockNN(nn.Module):
   def __init__(self):
     super(EpigeneticClockNN, self).__init__()
     self.network = nn.Sequential(
-        nn.Linear(360, 512),
+        nn.Linear(360, 256),
         nn.ReLU(),
-        nn.Dropout(0.1),
-        nn.Linear(512, 512),
+        nn.Dropout(0.3),
+        nn.Linear(256, 64),
         nn.ReLU(),
-        nn.Dropout(0.1),
-        nn.Linear(512, 128),
-        nn.ReLU(),
-        nn.Linear(128, 1)
+        nn.Dropout(0.2),
+        nn.Linear(64, 1)
     )
 
   def forward(self, x):
@@ -195,7 +193,7 @@ if __name__ == "__main__":
 
   model = EpigeneticClockNN()
   optimizer = torch.optim.Adam(model.parameters(), lr=3e-4)
-  num_epochs = 1000
+  num_epochs = 100
   loss_fn = nn.MSELoss()
 
   train_losses = []
@@ -218,7 +216,7 @@ if __name__ == "__main__":
     model.train()
     for x, y in train_loader:
       optimizer.zero_grad()
-      pred = model(x)
+      pred = model(x).squeeze()
       loss = loss_fn(pred, y)
       loss.backward()
       optimizer.step()
@@ -236,7 +234,7 @@ if __name__ == "__main__":
     test_mae_sum = 0
     with torch.no_grad():
       for x, y in test_loader:
-        pred = model(x)
+        pred = model(x).squeeze()
         loss = loss_fn(pred, y)
 
         test_epoch_loss += loss.item()
